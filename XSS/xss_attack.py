@@ -1,250 +1,211 @@
-#!/usr/bin/env python3
-"""
-Ethical XSS Scanner - For authorized penetration testing only
-Author: Security Professional
-Date: 2024
-"""
-
 import requests
-import argparse
-import sys
-from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
-import re
+from urllib.parse import urljoin, urlparse, parse_qs
 import time
 
-class XSSTester:
-    def __init__(self, target_url, delay=1, user_agent=None):
-        self.target_url = target_url
-        self.delay = delay
-        self.session = requests.Session()
-        self.vulnerable_urls = []
-        
-        # Set user agent
-        headers = {'User-Agent': user_agent or 'Ethical-XSS-Scanner/1.0'}
-        self.session.headers.update(headers)
-        
-        # Common XSS payloads (can be expanded)
-        self.payloads = [
-            '<script>alert("XSS")</script>',
-            '<img src=x onerror=alert("XSS")>',
-            '<svg onload=alert("XSS")>',
-            'javascript:alert("XSS")',
-            '" onmouseover="alert(\'XSS\')',
-            "' onmouseover='alert(\"XSS\")",
-            '<iframe src="javascript:alert(\'XSS\')">',
-            '<body onload=alert("XSS")>',
-            '<script>document.domain</script>',
-            '<script>prompt("XSS")</script>'
-        ]
+# Step 1: Input Acceptance and Validation
+website = input("Enter the website URL (e.g., http://example.com): ")
+print("WARNING: Ensure you have explicit permission to scan this website.")
+try:
+    response = requests.get(website, timeout=5)
+    if response.status_code == 200:
+        print("Website is reachable.")
+    else:
+        print("Website is not reachable. Status code:", response.status_code)
+        exit()
+except requests.exceptions.RequestException as e:
+    print("An error occurred:", e)
+    exit()
 
-    def is_valid_url(self, url):
-        """Check if URL is valid"""
-        try:
-            result = urlparse(url)
-            return all([result.scheme, result.netloc])
-        except:
-            return False
+# Step 4: Generating XSS Payloads
+payloads = [
+    "<script>alert('XSS')</script>",
+    "<img src=1 onerror=alert('XSS')>",
+    "<ScRipt>alert('XSS')</ScRipt>",
+    "'><img src=1 onerror=alert('XSS')>",
+    "<iframe src='javascript:alert(\"XSS\")'></iframe>"
+]
 
-    def get_forms(self, url):
-        """Extract all forms from a webpage"""
-        try:
-            response = self.session.get(url, timeout=10)
-            soup = BeautifulSoup(response.content, 'html.parser')
-            return soup.find_all('form')
-        except Exception as e:
-            print(f"Error getting forms from {url}: {e}")
-            return []
+visited = set()
+max_depth = 2
+vulnerabilities = []  # To store detected vulnerabilities
 
-    def form_details(self, form):
-        """Extract form details"""
-        details = {}
-        details['action'] = form.attrs.get('action', '').lower()
-        details['method'] = form.attrs.get('method', 'get').lower()
-        details['inputs'] = []
-        
-        for input_tag in form.find_all('input'):
-            input_type = input_tag.attrs.get('type', 'text')
-            input_name = input_tag.attrs.get('name')
-            if input_name:
-                details['inputs'].append({'type': input_type, 'name': input_name})
-        
-        return details
-
-    def test_url_params(self, url):
-        """Test URL parameters for XSS"""
+# Step 5: Injecting Payloads (and basic analysis)
+def test_injection_point(url, injection_point, payload):
+    results = []
+    
+    if injection_point['type'] == 'url_param':
+        param_name = injection_point['param']
         parsed_url = urlparse(url)
-        query_params = {}
-        
-        if parsed_url.query:
-            from urllib.parse import parse_qs
-            query_params = parse_qs(parsed_url.query)
-        
-        vulnerable = False
-        
-        for param in query_params:
-            for payload in self.payloads:
-                test_url = url.replace(
-                    f"{param}={query_params[param][0]}", 
-                    f"{param}={payload}"
-                )
-                
-                try:
-                    response = self.session.get(test_url, timeout=10)
-                    if payload in response.text:
-                        print(f"[+] Potential XSS found in parameter: {param}")
-                        print(f"    URL: {test_url}")
-                        print(f"    Payload: {payload}")
-                        vulnerable = True
-                        self.vulnerable_urls.append(test_url)
-                        break
-                except Exception as e:
-                    print(f"Error testing {test_url}: {e}")
-        
-        return vulnerable
-
-    def test_form(self, form, url):
-        """Test a form for XSS vulnerabilities"""
-        details = self.form_details(form)
-        target_url = urljoin(url, details['action'])
-        data = {}
-        
-        vulnerable = False
-        
-        for input_field in details['inputs']:
-            for payload in self.payloads:
-                # Prepare form data
-                for field in details['inputs']:
-                    if field['name'] == input_field['name']:
-                        data[field['name']] = payload
-                    else:
-                        data[field['name']] = 'test'
-                
-                try:
-                    if details['method'] == 'post':
-                        response = self.session.post(target_url, data=data, timeout=10)
-                    else:
-                        response = self.session.get(target_url, params=data, timeout=10)
-                    
-                    if payload in response.text:
-                        print(f"[+] Potential XSS found in form field: {input_field['name']}")
-                        print(f"    URL: {target_url}")
-                        print(f"    Method: {details['method'].upper()}")
-                        print(f"    Field: {input_field['name']}")
-                        print(f"    Payload: {payload}")
-                        vulnerable = True
-                        self.vulnerable_urls.append(f"{target_url}?{input_field['name']}={payload}")
-                        break
-                
-                except Exception as e:
-                    print(f"Error testing form: {e}")
-        
-        return vulnerable
-
-    def crawl_and_test(self, url, max_depth=2, current_depth=0, visited=None):
-        """Crawl website and test for XSS"""
-        if visited is None:
-            visited = set()
-        
-        if current_depth > max_depth or url in visited:
-            return
-        
-        visited.add(url)
-        print(f"[*] Testing: {url}")
-        
-        # Test URL parameters
-        self.test_url_params(url)
-        
-        # Test forms on the page
-        forms = self.get_forms(url)
-        for form in forms:
-            self.test_form(form, url)
-        
-        # Find and follow links
-        try:
-            response = self.session.get(url, timeout=10)
-            soup = BeautifulSoup(response.content, 'html.parser')
-            
-            for link in soup.find_all('a', href=True):
-                href = link.attrs['href']
-                full_url = urljoin(url, href)
-                
-                if self.is_valid_url(full_url) and urlparse(full_url).netloc == urlparse(self.target_url).netloc:
-                    if full_url not in visited:
-                        time.sleep(self.delay)
-                        self.crawl_and_test(full_url, max_depth, current_depth + 1, visited)
-        
-        except Exception as e:
-            print(f"Error crawling {url}: {e}")
-
-    def run_scan(self, max_depth=2):
-        """Run the complete XSS scan"""
-        print(f"[*] Starting XSS scan on: {self.target_url}")
-        print(f"[*] Maximum crawl depth: {max_depth}")
-        print("-" * 60)
-        
-        if not self.is_valid_url(self.target_url):
-            print("[-] Invalid URL provided")
-            return False
+        base_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
+        test_url = f"{base_url}?{param_name}={payload}"
         
         try:
-            # Initial test of the target URL
-            self.crawl_and_test(self.target_url, max_depth)
-            
-            # Print summary
-            print("\n" + "=" * 60)
-            print("SCAN SUMMARY")
-            print("=" * 60)
-            
-            if self.vulnerable_urls:
-                print(f"[+] Found {len(self.vulnerable_urls)} potential XSS vulnerabilities:")
-                for vuln_url in self.vulnerable_urls:
-                    print(f"  - {vuln_url}")
+            response = requests.get(test_url, timeout=5)
+            result = {
+                'request': test_url,
+                'response': response.text,
+                'payload': payload,
+                'type': 'url_param',
+                'param': param_name
+            }
+            # Basic analysis (Step 6): Check if payload is reflected unsanitized
+            if payload in response.text:
+                vulnerabilities.append({
+                    'url': url,
+                    'type': 'url_param',
+                    'param': param_name,
+                    'payload': payload,
+                    'request': test_url
+                })
+                print(f"[VULNERABILITY] Reflected payload in URL param: {param_name}, Payload: {payload}")
+            results.append(result)
+        except requests.RequestException as e:
+            results.append({
+                'request': test_url,
+                'response': str(e),
+                'payload': payload,
+                'type': 'url_param',
+                'error': True
+            })
+    
+    elif injection_point['type'] == 'form':
+        form_url = injection_point['action']
+        method = injection_point['method'].lower()
+        fields = injection_point['fields']
+        data = {field: payload for field in fields}
+        
+        try:
+            if method == 'post':
+                response = requests.post(form_url, data=data, timeout=5)
             else:
-                print("[-] No XSS vulnerabilities found")
+                response = requests.get(form_url, params=data, timeout=5)
             
-            return len(self.vulnerable_urls) > 0
+            result = {
+                'request': {'url': form_url, 'method': method, 'data': data},
+                'response': response.text,
+                'payload': payload,
+                'type': 'form'
+            }
+            # Basic analysis (Step 6): Check if payload is reflected unsanitized
+            if payload in response.text:
+                vulnerabilities.append({
+                    'url': url,
+                    'type': 'form',
+                    'method': method,
+                    'fields': fields,
+                    'payload': payload,
+                    'request': result['request']
+                })
+                print(f"[VULNERABILITY] Reflected payload in form, Method: {method}, Payload: {payload}")
+            results.append(result)
+            
+            # Test alternative method (GET/POST) if applicable
+            alt_method = 'get' if method == 'post' else 'post'
+            try:
+                if alt_method == 'post':
+                    response = requests.post(form_url, data=data, timeout=5)
+                else:
+                    response = requests.get(form_url, params=data, timeout=5)
+                result = {
+                    'request': {'url': form_url, 'method': alt_method, 'data': data},
+                    'response': response.text,
+                    'payload': payload,
+                    'type': 'form'
+                }
+                if payload in response.text:
+                    vulnerabilities.append({
+                        'url': url,
+                        'type': 'form',
+                        'method': alt_method,
+                        'fields': fields,
+                        'payload': payload,
+                        'request': result['request']
+                    })
+                    print(f"[VULNERABILITY] Reflected payload in form, Method: {alt_method}, Payload: {payload}")
+                results.append(result)
+            except requests.RequestException:
+                pass  # Skip alternative method errors for simplicity
         
-        except KeyboardInterrupt:
-            print("\n[!] Scan interrupted by user")
-            return False
-        except Exception as e:
-            print(f"[-] Error during scan: {e}")
-            return False
+        except requests.RequestException as e:
+            results.append({
+                'request': {'url': form_url, 'method': method, 'data': data},
+                'response': str(e),
+                'payload': payload,
+                'type': 'form',
+                'error': True
+            })
+    
+    return results
 
-def main():
-    parser = argparse.ArgumentParser(description='Ethical XSS Scanner')
-    parser.add_argument('target', help='Target URL to test')
-    parser.add_argument('-d', '--depth', type=int, default=2, 
-                       help='Maximum crawl depth (default: 2)')
-    parser.add_argument('--delay', type=float, default=1,
-                       help='Delay between requests in seconds (default: 1)')
-    parser.add_argument('-o', '--output', help='Output file for results')
+# Step 7: Reporting Results
+def generate_report():
+    report = "XSS Vulnerability Scan Report\n"
+    report += f"Generated on: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+    report += f"Target: {website}\n\n"
     
-    args = parser.parse_args()
+    if not vulnerabilities:
+        report += "No vulnerabilities found.\n"
+    else:
+        for vuln in vulnerabilities:
+            report += f"Vulnerability Found:\n"
+            report += f"URL: {vuln['url']}\n"
+            report += f"Type: {vuln['type']}\n"
+            if vuln['type'] == 'url_param':
+                report += f"Parameter: {vuln['param']}\n"
+            else:
+                report += f"Method: {vuln['method']}, Fields: {vuln['fields']}\n"
+            report += f"Payload: {vuln['payload']}\n"
+            report += f"Request: {vuln['request']}\n"
+            report += "-" * 50 + "\n"
     
-    # Disclaimer
-    print("=" * 70)
-    print("ETHICAL XSS SCANNER - FOR AUTHORIZED TESTING ONLY")
-    print("=" * 70)
-    print("This tool should only be used on systems you own or have")
-    print("explicit permission to test. Unauthorized use is illegal.")
-    print("=" * 70)
-    
-    # Run the scanner
-    scanner = XSSTester(args.target, args.delay)
-    vulnerabilities_found = scanner.run_scan(args.depth)
-    
-    # Save results if output specified
-    if args.output and scanner.vulnerable_urls:
-        with open(args.output, 'w') as f:
-            f.write(f"XSS Scan Results for {args.target}\n")
-            f.write("=" * 50 + "\n")
-            for vuln in scanner.vulnerable_urls:
-                f.write(f"{vuln}\n")
-        print(f"\n[+] Results saved to {args.output}")
-    
-    return 0 if vulnerabilities_found else 1
+    print(report)
+    with open('xss_scan_report.txt', 'w') as f:
+        f.write(report)
 
-if __name__ == "__main__":
-    sys.exit(main())
+# Step 2 & 3: Crawling and Identifying Injection Points
+def crawler(url, depth=0):
+    if depth > max_depth or url in visited:
+        return
+    visited.add(url)  # Fixed bug: was adding 1 instead of url
+    try:
+        r = requests.get(url, timeout=5)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, "html.parser")
+
+        # Step 3: Identify forms
+        forms = soup.find_all("form")
+        for f in forms:
+            action = urljoin(url, f.get("action", url))
+            method = f.get("method", "get").upper()
+            inputs = [i.get("name") for i in f.find_all(["input", "textarea", "select", "button"]) if i.get("name")]
+            if inputs:  # Only process forms with inputs
+                print(f"[FORM] URL: {url}, Action: {action}, Method: {method}, Inputs: {inputs}")
+                # Step 5: Test form injection
+                injection_point = {'type': 'form', 'action': action, 'method': method, 'fields': inputs}
+                for p in payloads:
+                    print(f"[PAYLOAD] Form, Payload: {p}")
+                    test_injection_point(url, injection_point, p)
+
+        # Step 3: Identify URL parameters
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query)
+        if params:
+            print(f"[PARAMS] URL: {url}, Parameters: {list(params.keys())}")
+            for param in params:
+                injection_point = {'type': 'url_param', 'param': param}
+                for p in payloads:
+                    print(f"[PAYLOAD] URLParam: {param}, Payload: {p}")
+                    test_injection_point(url, injection_point, p)
+
+        # Step 2: Continue crawling
+        for link in soup.find_all("a", href=True):
+            next_url = urljoin(url, link['href'])
+            if urlparse(next_url).netloc == urlparse(website).netloc:
+                crawler(next_url, depth + 1)
+    except requests.RequestException:
+        pass
+
+# Run the scanner
+crawler(website)
+generate_report()
