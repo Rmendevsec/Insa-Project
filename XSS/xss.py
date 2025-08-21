@@ -1,4 +1,4 @@
-import requests, time
+import requests, sys
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse, parse_qs
 class XSSScanner:
@@ -67,13 +67,15 @@ class XSSScanner:
             print(f"[VULNERABLE] {url} | {field} | {method} | payload={payload}")
 
 if __name__=="__main__":
-    print(" Use only on websites you own or have permission to test!")
-    target = input("Enter target URL: ")
+    if len(sys.argv) < 2:
+        exit("python xss.py {url}")
+    target = sys.argv[1]
     try:
         if requests.get(target, timeout=5).status_code != 200:
-            print("Website unreachable."); exit()
+         exit("Website unreachable.")
     except:
-        print("Error accessing site."); exit()
+         exit("Error accessing site.")
+
     scan = XSSScanner(target)
     scan.crawl(target)
     scan.report()

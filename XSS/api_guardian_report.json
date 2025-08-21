@@ -1,0 +1,19 @@
+{
+  "target": "https://0aca008104e5b6cf816f43e800bf008e.web-security-academy.net/",
+  "time": "2025-08-21 13:45:10",
+  "findings": [
+    {
+      "category": "Availability",
+      "message": "Endpoint not reachable or timed out.",
+      "severity": "HIGH"
+    },
+    {
+      "category": "Rate Limiting",
+      "message": "No evidence of throttling headers or 429 under burst (30 req). Consider rate limits.",
+      "severity": "MEDIUM"
+    }
+  ],
+  "notes": [
+    "Mapped to OWASP API Top 10 (2023): BOLA/IDOR, Broken Auth, Excessive Data Exposure, Lack of Rate Limiting, Mass Assignment, Improper Inventory, etc."
+  ]
+}

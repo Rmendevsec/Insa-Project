@@ -1,29 +1,40 @@
-// backend/index.js
-import express from "express";
-import sqlite3 from "sqlite3";
-import cors from "cors";
+const express = require("express")
+const cors = require("cors")
+const bodyParser = require("body-parser")
+const {spawn} = require("child_process")
 
-const app = express();
-app.use(cors());
+const app = express()
+app.use(cors())
+app.use(express.json())
+app.use(bodyParser.json())
 
-const db = new sqlite3.Database(":memory:");
+const PORT = 5000
+app.listen(PORT, ()=>{
+    console.log(`server is running on port {PORT}`)
+})
 
-// Create a demo table
-db.serialize(() => {
-  db.run("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)");
-  db.run("INSERT INTO users (name) VALUES ('Alice')");
-  db.run("INSERT INTO users (name) VALUES ('Bob')");
-  db.run("INSERT INTO users (name) VALUES ('<img src=x onerror=alert(`XSS`)>')");
-});
+app.post("/scan", (req,res)=>{
+    const {url, vuln}=req.body
 
-// ❌ Intentionally vulnerable to SQL injection
-app.get("/search", (req, res) => {
-  const term = req.query.term || "";
-  const sql = `SELECT * FROM users WHERE name LIKE '%${term}%'`; // <-- vulnerable
-  db.all(sql, [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
-  });
-});
+    if (vuln === "xss"){
+        const process=spawn("python", ["../XSS/xss.py", url])
+        let output = ""
 
-app.listen(4000, () => console.log("Vulnerable API running on http://localhost:4000"));
+        process.stdout.on("data", (data=>{
+            output += data.tostring()
+
+        }))
+
+        process.stderr.on("data", data=>{
+            output += data.tostring()
+
+        })
+        process.on("close", ()=>{
+            res.json({output})
+        })
+
+    }else{
+        res.json({err: "Unsupported vulnerability"})
+    }
+})
+
