@@ -1,11 +1,21 @@
 {
-  "target": "https://0aca008104e5b6cf816f43e800bf008e.web-security-academy.net/",
-  "time": "2025-08-21 13:45:10",
+  "target": "https://vulnbank.org/",
+  "time": "2025-08-21 19:49:11",
   "findings": [
     {
-      "category": "Availability",
-      "message": "Endpoint not reachable or timed out.",
-      "severity": "HIGH"
+      "category": "Sensitive Data Caching",
+      "message": "No strict cache controls (add `no-store, private` for sensitive responses).",
+      "severity": "MEDIUM"
+    },
+    {
+      "category": "CORS",
+      "message": "Wildcard ACAO detected. Consider restricting origins.",
+      "severity": "MEDIUM"
+    },
+    {
+      "category": "Discovery",
+      "message": "Advertised allowed methods: GET, OPTIONS, HEAD",
+      "severity": "INFO"
     },
     {
       "category": "Rate Limiting",
