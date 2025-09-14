@@ -1,0 +1,8 @@
+Flask==2.3.4
+flask-cors==4.0.1
+python-dotenv==1.0.0
+requests==2.31.0
+jsonschema==4.19.0
+PyYAML==6.0
+openapi-spec-validator==0.4.2
+rich==13.3.2
